@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2d6a4f">
+<title>Leitor de Audiolivros</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Audiolivros">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-512.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,650&family=Figtree:wght@400;500;600&display=swap">
+<style>
+/* Layout: uma coluna estreita como a página de um livro; biblioteca em cima, o player fixo embaixo, ao alcance do polegar */
+:root {
+  --bg: #f3f4f1;
+  --surface: #ffffff;
+  --ink: #1c2420;
+  --muted: #5f6b65;
+  --line: #d9ddd8;
+  --accent: #2d6a4f;
+  --accent-ink: #ffffff;
+  --accent-soft: #dcebe2;
+  --danger: #a33a2b;
+  --font-display: "Literata", Georgia, "Times New Roman", serif;
+  --font-body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111513; --surface: #1a201d; --ink: #e8ece9; --muted: #98a59e; --line: #2c3430;
+    --accent: #6fc59a; --accent-ink: #0e1a14; --accent-soft: #1f3a2d; --danger: #f08a7a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111513; --surface: #1a201d; --ink: #e8ece9; --muted: #98a59e; --line: #2c3430;
+  --accent: #6fc59a; --accent-ink: #0e1a14; --accent-soft: #1f3a2d; --danger: #f08a7a; color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.45;
+  -webkit-tap-highlight-color: transparent;
+}
+.wrap {
+  max-width: 560px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 340px;
+}
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h1 { font-family: var(--font-display); font-weight: 650; font-size: 1.7rem; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+.sub { color: var(--muted); font-size: 0.9rem; margin: 2px 0 0; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible, label.add:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+label.add {
+  display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;
+  background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 10px 16px;
+  font-weight: 600; cursor: pointer;
+}
+label.add input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+
+.list { list-style: none; margin: 20px 0 0; padding: 0; display: grid; gap: 0; border-top: 1px solid var(--line); }
+.item { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 12px; padding: 14px 2px; border-bottom: 1px solid var(--line); }
+.item .open { text-align: left; background: none; border: 0; padding: 0; min-width: 0; display: grid; gap: 6px; }
+.item .name { font-family: var(--font-display); font-weight: 500; font-size: 1.05rem; overflow-wrap: anywhere; }
+.item.current .name { color: var(--accent); }
+.meta { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+.bar { flex: 1; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; max-width: 160px; }
+.bar i { display: block; height: 100%; background: var(--accent); }
+.del { background: none; border: 0; color: var(--muted); padding: 8px; border-radius: 8px; font-size: 0.85rem; }
+.del.armed { color: var(--danger); font-weight: 600; }
+
+.empty { margin-top: 28px; padding: 22px; border: 1px dashed var(--line); border-radius: 14px; color: var(--muted); }
+.empty h2 { font-family: var(--font-display); color: var(--ink); font-size: 1.15rem; margin: 0 0 8px; font-weight: 500; }
+.empty ol { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+.note { color: var(--muted); font-size: 0.8rem; margin-top: 18px; }
+
+/* Player */
+.player {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+  background: var(--surface); border-top: 1px solid var(--line);
+  box-shadow: 0 -8px 30px rgba(0,0,0,.08);
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: 14px;
+}
+.player .in { max-width: 560px; margin: 0 auto; display: grid; gap: 10px; }
+.now { font-family: var(--font-display); font-weight: 500; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.times { display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; height: 28px; }
+.controls { display: grid; grid-template-columns: repeat(5, 1fr); align-items: center; justify-items: center; gap: 4px; }
+.skip {
+  width: 56px; height: 56px; border-radius: 50%; border: 1px solid var(--line); background: var(--bg);
+  display: grid; place-items: center; font-weight: 600; font-variant-numeric: tabular-nums; font-size: 0.95rem;
+}
+.skip small { display: block; font-size: 0.62rem; font-weight: 500; color: var(--muted); margin-top: -4px; }
+.play { width: 72px; height: 72px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; }
+.play svg { width: 30px; height: 30px; fill: currentColor; }
+.speedrow { display: grid; grid-template-columns: 44px 1fr 44px auto; align-items: center; gap: 8px; }
+.step { height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-size: 1.2rem; }
+.rate { font-weight: 600; font-variant-numeric: tabular-nums; min-width: 3.4em; text-align: right; }
+.chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.chip { flex-shrink: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 6px 11px; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); font-weight: 600; }
+.chip.sleep { margin-left: auto; }
+.player[data-empty] .controls, .player[data-empty] .speedrow { opacity: .45; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+<style>:root{padding-top:env(safe-area-inset-top,0px)} body{margin:0} [hidden]{display:none!important}</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Audiolivros</h1>
+      <p class="sub" id="sub">Seus capítulos ficam salvos neste aparelho</p>
+    </div>
+    <label class="add" for="file">
+      <span aria-hidden="true">＋</span> Adicionar
+      <input id="file" type="file" accept="audio/*,.mp3,.m4a,.wav,.aac" multiple>
+    </label>
+  </header>
+
+  <ul class="list" id="list"></ul>
+
+  <div class="empty" id="empty">
+    <h2>Nenhum áudio ainda</h2>
+    <ol>
+      <li>Gere o MP3 no Colab com o notebook PDF para Audiolivro.</li>
+      <li>Ele fica em Meu Drive › Audiolivros.</li>
+      <li>Toque em <strong>Adicionar</strong> e escolha o arquivo (no iPhone: Procurar › Drive).</li>
+    </ol>
+  </div>
+  <p class="note" id="note">O lugar onde você parou e a velocidade são lembrados para cada áudio.</p>
+</div>
+
+<section class="player" id="player" data-empty aria-label="Player">
+  <div class="in">
+    <div class="now" id="now">Escolha um áudio na lista</div>
+    <input type="range" id="seek" min="0" max="1000" value="0" step="1" aria-label="Posição">
+    <div class="times"><span id="cur">0:00</span><span id="left">−0:00</span></div>
+    <div class="controls">
+      <button class="skip" id="b10" aria-label="Voltar 10 segundos">−10<small>seg</small></button>
+      <button class="skip" id="b5" aria-label="Voltar 5 segundos">−5<small>seg</small></button>
+      <button class="play" id="play" aria-label="Tocar"><svg viewBox="0 0 24 24" id="ico"><path d="M8 5v14l11-7z"/></svg></button>
+      <button class="skip" id="f5" aria-label="Avançar 5 segundos">+5<small>seg</small></button>
+      <button class="skip" id="f10" aria-label="Avançar 10 segundos">+10<small>seg</small></button>
+    </div>
+    <div class="speedrow">
+      <button class="step" id="slow" aria-label="Diminuir velocidade">−</button>
+      <input type="range" id="speed" min="0.5" max="3" step="0.05" value="1" aria-label="Velocidade">
+      <button class="step" id="fast" aria-label="Aumentar velocidade">+</button>
+      <span class="rate" id="rate">1,00×</span>
+    </div>
+    <div class="chips" id="chips"></div>
+  </div>
+</section>
+
+<audio id="audio" preload="metadata"></audio>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const audio = $("audio"), list = $("list");
+  const PRESETS = [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 3];
+  const SLEEP = [0, 15, 30, 45, 60];
+  let items = [], current = null, url = null, sleepIdx = 0, sleepTimer = null, sleepEnd = 0;
+
+  // ---------- armazenamento (IndexedDB neste aparelho) ----------
+  let dbp = null;
+  function db() {
+    if (dbp) return dbp;
+    dbp = new Promise((res, rej) => {
+      try {
+        const r = indexedDB.open("audiolivros", 1);
+        r.onupgradeneeded = () => { r.result.createObjectStore("files"); r.result.createObjectStore("meta", { keyPath: "id" }); };
+        r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+      } catch (e) { rej(e); }
+    });
+    return dbp;
+  }
+  async function tx(store, mode, fn) {
+    const d = await db();
+    return new Promise((res, rej) => {
+      const t = d.transaction(store, mode), s = t.objectStore(store); let out;
+      const r = fn(s); if (r) r.onsuccess = () => out = r.result;
+      t.oncomplete = () => res(out); t.onerror = () => rej(t.error);
+    });
+  }
+  const saveMeta = m => tx("meta", "readwrite", s => s.put(m)).catch(() => {});
+  const pref = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
+
+  // ---------- util ----------
+  const fmt = s => {
+    if (!isFinite(s) || s < 0) s = 0;
+    s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), ss = String(s % 60).padStart(2, "0");
+    return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+  };
+  const fmtRate = r => r.toFixed(2).replace(".", ",") + "×";
+  const clean = n => n.replace(/\.(mp3|m4a|wav|aac)$/i, "").replace(/_/g, " ");
+
+  // ---------- lista ----------
+  function render() {
+    $("empty").hidden = items.length > 0;
+    list.innerHTML = "";
+    items.slice().sort((a, b) => (b.opened || b.added) - (a.opened || a.added)).forEach(m => {
+      const li = document.createElement("li");
+      li.className = "item" + (current && current.id === m.id ? " current" : "");
+      const pct = m.duration ? Math.min(100, m.pos / m.duration * 100) : 0;
+      const restante = m.duration ? fmt(Math.max(0, m.duration - m.pos)) + " restantes" : "não iniciado";
+      li.innerHTML = `<button class="open"><span class="name"></span>
+        <span class="meta"><span class="bar"><i style="width:${pct.toFixed(1)}%"></i></span><span>${pct >= 99 ? "concluído" : restante}</span></span></button>
+        <button class="del" aria-label="Remover">Remover</button>`;
+      li.querySelector(".name").textContent = clean(m.name);
+      li.querySelector(".open").onclick = () => open(m, true);
+      const del = li.querySelector(".del");
+      del.onclick = async () => {
+        if (!del.classList.contains("armed")) { del.classList.add("armed"); del.textContent = "Confirmar"; setTimeout(() => { del.classList.remove("armed"); del.textContent = "Remover"; }, 3000); return; }
+        await tx("files", "readwrite", s => s.delete(m.id)).catch(() => {});
+        await tx("meta", "readwrite", s => s.delete(m.id)).catch(() => {});
+        items = items.filter(x => x.id !== m.id);
+        if (current && current.id === m.id) { audio.pause(); audio.removeAttribute("src"); current = null; $("player").setAttribute("data-empty", ""); $("now").textContent = "Escolha um áudio na lista"; }
+        render();
+      };
+      list.appendChild(li);
+    });
+  }
+
+  // ---------- abrir e tocar ----------
+  async function open(m, autoplay) {
+    if (current && current.id === m.id) { if (autoplay) toggle(); return; }
+    persist();
+    const blob = await tx("files", "readonly", s => s.get(m.id)).catch(() => null);
+    if (!blob) { $("now").textContent = "Não achei esse arquivo neste aparelho. Adicione de novo."; return; }
+    if (url) URL.revokeObjectURL(url);
+    url = URL.createObjectURL(blob);
+    current = m; m.opened = Date.now(); saveMeta(m);
+    pref("ultimo", m.id);
+    audio.src = url;
+    audio.preservesPitch = true; audio.webkitPreservesPitch = true;
+    $("now").textContent = clean(m.name);
+    $("player").removeAttribute("data-empty");
+    audio.addEventListener("loadedmetadata", () => {
+      if (m.pos && m.pos < audio.duration - 3) audio.currentTime = m.pos;
+      setRate(m.rate || Number(pref("vel")) || 1);
+      if (!m.duration) { m.duration = audio.duration; saveMeta(m); }
+      if (autoplay) audio.play().catch(() => {});
+      updateTimes();
+    }, { once: true });
+    setupMediaSession(m);
+    render();
+  }
+  function toggle() { if (!current) return; audio.paused ? audio.play().catch(() => {}) : audio.pause(); }
+  function skip(s) { if (!current) return; audio.currentTime = Math.max(0, Math.min((audio.duration || 0) - 0.5, audio.currentTime + s)); updateTimes(); }
+  function setRate(r) {
+    r = Math.round(Math.max(0.5, Math.min(3, r)) * 20) / 20;
+    audio.playbackRate = r; audio.defaultPlaybackRate = r;
+    $("speed").value = r; $("rate").textContent = fmtRate(r);
+    document.querySelectorAll(".chip[data-r]").forEach(c => c.classList.toggle("on", Number(c.dataset.r) === r));
+    pref("vel", String(r));
+    if (current) { current.rate = r; saveMeta(current); }
+    updateTimes();
+  }
+  let lastSave = 0;
+  function persist() { if (current && isFinite(audio.currentTime) && audio.currentTime > 0) { current.pos = audio.currentTime; saveMeta(current); } }
+  function updateTimes() {
+    const d = audio.duration || 0, t = audio.currentTime || 0, r = audio.playbackRate || 1;
+    $("cur").textContent = fmt(t);
+    $("left").textContent = "−" + fmt((d - t) / r) + (r !== 1 ? " a " + fmtRate(r) : "");
+    if (!seeking) $("seek").value = d ? Math.round(t / d * 1000) : 0;
+    if ("mediaSession" in navigator && d && navigator.mediaSession.setPositionState) {
+      try { navigator.mediaSession.setPositionState({ duration: d, position: Math.min(t, d), playbackRate: r }); } catch (e) {}
+    }
+  }
+  function setupMediaSession(m) {
+    if (!("mediaSession" in navigator)) return;
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({ title: clean(m.name), artist: "Audiolivros" });
+      const ms = navigator.mediaSession;
+      ms.setActionHandler("play", () => audio.play());
+      ms.setActionHandler("pause", () => audio.pause());
+      ms.setActionHandler("seekbackward", e => skip(-(e.seekOffset || 10)));
+      ms.setActionHandler("seekforward", e => skip(e.seekOffset || 10));
+      ms.setActionHandler("seekto", e => { audio.currentTime = e.seekTime; updateTimes(); });
+      try { ms.setActionHandler("previoustrack", () => skip(-10)); ms.setActionHandler("nexttrack", () => skip(10)); } catch (e) {}
+    } catch (e) {}
+  }
+
+  // ---------- timer para dormir ----------
+  function cycleSleep(btn) {
+    sleepIdx = (sleepIdx + 1) % SLEEP.length;
+    clearInterval(sleepTimer); sleepTimer = null;
+    const min = SLEEP[sleepIdx];
+    if (!min) { btn.textContent = "Timer"; btn.classList.remove("on"); return; }
+    sleepEnd = Date.now() + min * 60000; btn.classList.add("on");
+    const tick = () => {
+      const left = sleepEnd - Date.now();
+      if (left <= 0) { audio.pause(); clearInterval(sleepTimer); sleepIdx = 0; btn.textContent = "Timer"; btn.classList.remove("on"); return; }
+      btn.textContent = "Dormir " + Math.ceil(left / 60000) + " min";
+    };
+    tick(); sleepTimer = setInterval(tick, 15000);
+  }
+
+  // ---------- montar controles ----------
+  PRESETS.forEach(r => {
+    const b = document.createElement("button"); b.className = "chip"; b.dataset.r = r; b.textContent = fmtRate(r).replace(",00", "");
+    b.onclick = () => setRate(r); $("chips").appendChild(b);
+  });
+  const sb = document.createElement("button"); sb.className = "chip sleep"; sb.textContent = "Timer";
+  sb.setAttribute("aria-label", "Timer para pausar sozinho"); sb.onclick = () => cycleSleep(sb); $("chips").appendChild(sb);
+
+  $("play").onclick = toggle;
+  $("b10").onclick = () => skip(-10); $("b5").onclick = () => skip(-5);
+  $("f5").onclick = () => skip(5); $("f10").onclick = () => skip(10);
+  $("slow").onclick = () => setRate(audio.playbackRate - 0.1);
+  $("fast").onclick = () => setRate(audio.playbackRate + 0.1);
+  $("speed").oninput = e => setRate(Number(e.target.value));
+  let seeking = false;
+  $("seek").addEventListener("input", e => { seeking = true; const d = audio.duration || 0; $("cur").textContent = fmt(d * e.target.value / 1000); });
+  $("seek").addEventListener("change", e => { seeking = false; if (audio.duration) audio.currentTime = audio.duration * e.target.value / 1000; updateTimes(); persist(); });
+
+  const ICON_PLAY = '<path d="M8 5v14l11-7z"/>', ICON_PAUSE = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
+  audio.addEventListener("play", () => { $("ico").innerHTML = ICON_PAUSE; $("play").setAttribute("aria-label", "Pausar"); });
+  audio.addEventListener("pause", () => { $("ico").innerHTML = ICON_PLAY; $("play").setAttribute("aria-label", "Tocar"); persist(); render(); });
+  audio.addEventListener("timeupdate", () => { updateTimes(); if (Date.now() - lastSave > 5000) { lastSave = Date.now(); persist(); } });
+  audio.addEventListener("ratechange", () => { if (Math.abs(audio.playbackRate - Number($("speed").value)) > 0.01) setRate(audio.playbackRate); });
+  audio.addEventListener("ended", () => { persist(); render(); });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) persist(); });
+
+  document.addEventListener("keydown", e => {
+    if (e.target.tagName === "INPUT" && e.target.type !== "range") return;
+    if (e.code === "Space") { e.preventDefault(); toggle(); }
+    else if (e.key === "ArrowLeft") skip(e.shiftKey ? -10 : -5);
+    else if (e.key === "ArrowRight") skip(e.shiftKey ? 10 : 5);
+  });
+
+  $("file").addEventListener("change", async e => {
+    const files = [...e.target.files]; e.target.value = "";
+    let ok = 0;
+    for (const f of files) {
+      const id = f.name + "|" + f.size;
+      try {
+        await tx("files", "readwrite", s => s.put(f, id));
+        const m = items.find(x => x.id === id) || { id, name: f.name, pos: 0, duration: 0, added: Date.now() };
+        await saveMeta(m);
+        if (!items.includes(m)) items.push(m);
+        ok++;
+      } catch (err) {
+        $("sub").textContent = "Não consegui guardar o arquivo neste aparelho. Ele vai tocar, mas não ficará salvo.";
+        const m = { id, name: f.name, pos: 0, duration: 0, added: Date.now() };
+        items.push(m); render();
+        if (url) URL.revokeObjectURL(url); url = URL.createObjectURL(f); current = m; audio.src = url;
+        $("now").textContent = clean(f.name); $("player").removeAttribute("data-empty");
+      }
+    }
+    render();
+    if (ok === 1 && files.length === 1) open(items.find(x => x.id === files[0].name + "|" + files[0].size), false);
+  });
+
+  // ---------- início ----------
+  setRate(Number(pref("vel")) || 1);
+  tx("meta", "readonly", s => s.getAll()).then(all => {
+    items = all || []; render();
+    const last = items.find(x => x.id === pref("ultimo"));
+    if (last) open(last, false);
+  }).catch(() => { $("sub").textContent = "Este navegador não deixa guardar arquivos aqui; os áudios tocam, mas não ficam salvos."; render(); });
+
+  if ("serviceWorker" in navigator && !/claude|anthropic/.test(location.hostname)) {
+    try { navigator.serviceWorker.register("sw.js").catch(() => {}); } catch (e) {}
+  }
+})();
+</script>
+
+</body>
+</html>
